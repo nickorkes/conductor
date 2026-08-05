@@ -180,8 +180,6 @@ public class AgentChatCompleteTaskMapper extends AIModelTaskMapper<ChatCompletio
      * <p>Best-effort — a failure must not fail scheduling; only a later retry would lose history,
      * which is the pre-existing behaviour. Costs a second copy of the message list, post-{@code
      * condenseIfNeeded}, so it scales with conversation length.
-     *
-     * <p>Fixes orkes-io/orkes-conductor#3876.
      */
     private void snapshotMessagesOntoTaskDefinition(TaskModel taskModel) {
         try {
