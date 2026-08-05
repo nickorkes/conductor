@@ -43,14 +43,15 @@ import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
-import static com.netflix.conductor.common.metadata.tasks.TaskType.TASK_TYPE_HTTP;
-import static com.netflix.conductor.common.metadata.tasks.TaskType.TASK_TYPE_SIMPLE;
-import static com.netflix.conductor.common.metadata.tasks.TaskType.TASK_TYPE_SUB_WORKFLOW;
 import com.netflix.conductor.common.metadata.workflow.WorkflowTask;
 import com.netflix.conductor.core.exception.TerminateWorkflowException;
 import com.netflix.conductor.core.execution.mapper.TaskMapperContext;
 import com.netflix.conductor.model.TaskModel;
 import com.netflix.conductor.model.WorkflowModel;
+
+import static com.netflix.conductor.common.metadata.tasks.TaskType.TASK_TYPE_HTTP;
+import static com.netflix.conductor.common.metadata.tasks.TaskType.TASK_TYPE_SIMPLE;
+import static com.netflix.conductor.common.metadata.tasks.TaskType.TASK_TYPE_SUB_WORKFLOW;
 
 /**
  * Custom override of Conductor's ChatCompleteTaskMapper that properly handles SUB_WORKFLOW task
