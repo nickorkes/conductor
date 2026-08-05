@@ -12,6 +12,7 @@
  */
 package org.conductoross.conductor.ai.tasks.mapper;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
@@ -178,6 +179,63 @@ public abstract class AIModelTaskMapper<T extends LLMWorkerInput> implements Tas
                 currentInput.put("previousResponseId", respId.toString());
                 return;
             }
+        }
+    }
+
+    /**
+     * Detach mapper-assembled input keys from the task's carried {@link WorkflowTask} definition so
+     * a RETRY or RERUN of the task keeps the assembled values.
+     *
+     * <p>Mappers like the chat-complete ones build parts of the task input imperatively in Java —
+     * conversation history from prior tasks, f-string substituted message text, tool lists — that
+     * are not expressible as {@code ${...}} references. Retry/rerun do not re-run the mapper; they
+     * copy the task and re-resolve the carried definition's {@code inputParameters} over it, which
+     * would overwrite the assembled value with the definition's static template. Removing the
+     * assembled keys from a task-owned copy of the definition means re-resolution simply never
+     * produces those keys, so the copied attempt's own {@code inputData} — the fully assembled
+     * conversation the first attempt actually used — survives untouched. This also avoids ever
+     * round-tripping conversation content through the template engine (message text containing
+     * {@code $}{...} patterns must never be re-interpreted) and does not grow the task payload.
+     *
+     * <p>The deep copy is load-bearing: {@code task.getWorkflowTask()} is the shared instance from
+     * the cached {@link com.netflix.conductor.common.metadata.workflow.WorkflowDef}; mutating it
+     * would leak into every other execution using that definition. New schedules (including
+     * DO_WHILE iterations) always map from the definition's own instance, so they are unaffected.
+     *
+     * <p>Best-effort: a failure must not fail scheduling — the fallback is the pre-existing
+     * behaviour (a later retry loses the assembled input).
+     */
+    protected void detachAssembledInputFromDefinition(TaskModel task, String... assembledKeys) {
+        try {
+            WorkflowTask sharedDefinition = task.getWorkflowTask();
+            if (sharedDefinition == null || sharedDefinition.getInputParameters() == null) {
+                return;
+            }
+            boolean anyPresent = false;
+            for (String key : assembledKeys) {
+                if (sharedDefinition.getInputParameters().containsKey(key)) {
+                    anyPresent = true;
+                    break;
+                }
+            }
+            if (!anyPresent) {
+                return;
+            }
+            WorkflowTask taskOwnedDefinition =
+                    objectMapper.convertValue(sharedDefinition, WorkflowTask.class);
+            Map<String, Object> inputParameters =
+                    new HashMap<>(taskOwnedDefinition.getInputParameters());
+            for (String key : assembledKeys) {
+                inputParameters.remove(key);
+            }
+            taskOwnedDefinition.setInputParameters(inputParameters);
+            task.setWorkflowTask(taskOwnedDefinition);
+        } catch (Exception e) {
+            log.warn(
+                    "Could not detach assembled input keys from the task definition for {} — a"
+                            + " retry of this task would fall back to the static template",
+                    task.getTaskId(),
+                    e);
         }
     }
 }

@@ -43,7 +43,6 @@ import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
-import com.netflix.conductor.common.metadata.workflow.WorkflowTask;
 import com.netflix.conductor.core.exception.TerminateWorkflowException;
 import com.netflix.conductor.core.execution.mapper.TaskMapperContext;
 import com.netflix.conductor.model.TaskModel;
@@ -148,7 +147,7 @@ public class AgentChatCompleteTaskMapper extends AIModelTaskMapper<ChatCompletio
             validateRunnableConversation(chatCompletion);
             ensureEndsWithUserMessage(chatCompletion, taskModel);
             ensureJsonOutputUserMessage(chatCompletion);
-            snapshotMessagesOntoTaskDefinition(taskModel);
+            detachAssembledInputFromDefinition(taskModel, "messages", "tools");
         } catch (Exception e) {
             if (e instanceof TerminateWorkflowException) {
                 throw (TerminateWorkflowException) e;
@@ -161,44 +160,6 @@ public class AgentChatCompleteTaskMapper extends AIModelTaskMapper<ChatCompletio
             }
         }
         return taskModel;
-    }
-
-    /**
-     * Persist the assembled messages onto the task's own copy of its {@link WorkflowTask}, so a
-     * RETRY of this task reproduces them.
-     *
-     * <p>This mapper builds the conversation in Java rather than declaring it as a {@code ${...}}
-     * reference, so retry — which re-resolves the definition's {@code inputParameters} over the
-     * copied task — overwrites it with the static {@code [system, user]} template. Re-resolving the
-     * definition afresh is correct for tasks generally, so the fix belongs here: put the messages
-     * IN the definition this task carries.
-     *
-     * <p>Deep-copy first. The {@link WorkflowTask} handed to a mapper is the shared instance from
-     * the cached {@link com.netflix.conductor.common.metadata.workflow.WorkflowDef}; mutating it
-     * would leak this conversation into every other execution using that definition.
-     *
-     * <p>Best-effort — a failure must not fail scheduling; only a later retry would lose history,
-     * which is the pre-existing behaviour. Costs a second copy of the message list, post-{@code
-     * condenseIfNeeded}, so it scales with conversation length.
-     */
-    private void snapshotMessagesOntoTaskDefinition(TaskModel taskModel) {
-        try {
-            WorkflowTask taskOwnedDefinition =
-                    objectMapper.convertValue(taskModel.getWorkflowTask(), WorkflowTask.class);
-            Map<String, Object> inputParameters =
-                    taskOwnedDefinition.getInputParameters() == null
-                            ? new HashMap<>()
-                            : new HashMap<>(taskOwnedDefinition.getInputParameters());
-            inputParameters.put("messages", taskModel.getInputData().get("messages"));
-            taskOwnedDefinition.setInputParameters(inputParameters);
-            taskModel.setWorkflowTask(taskOwnedDefinition);
-        } catch (Exception e) {
-            log.warn(
-                    "Could not snapshot assembled messages onto the task definition for {} — a "
-                            + "retry of this task would fall back to the static template",
-                    taskModel.getTaskId(),
-                    e);
-        }
     }
 
     /**
